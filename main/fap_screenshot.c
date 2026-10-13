@@ -170,6 +170,11 @@ void fap_screenshot_start(void) {
             return;
         }
     }
+    // 非阻塞模式是生死线：驱动 TX 环只有 1KB，主机没开串口时无人消费，
+    // 阻塞式日志会把调用日志的任务无限期挂死（真机「死机重启」的根因）。
+    // 非阻塞下写不进就丢弃——无主机读取时日志丢失无害，有主机时照常输出。
+        // IDF 5.5.3 的 nonblocking API 无参：读不阻塞、写忙等 FIFO——都不如直接
+    // 关运行期日志（main.c 末尾 ESP_LOG_NONE）可靠，这里保留驱动通道给截屏。
     usb_serial_jtag_vfs_use_driver();
 
     lv_display_t *display = lv_display_get_default();

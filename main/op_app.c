@@ -25,7 +25,8 @@ static const char *TAG = "op_app";
 
 // P-M1 测试句：验证「建线程 → user_turn → 流式回复 → 分页」全链路。
 static const char *TEST_PROMPT =
-    "请用不超过三百字介绍你自己，用简体中文，分三段。";
+    "请写一篇八百字左右的短文，介绍一个你熟悉的历史典故，"
+    "用简体中文，分四段，叙事为主。";
 
 // 网络任务上下文回调 → 需要碰 LVGL 的都丢到 LVGL 定时器里做（不直接拿锁，
 // 避免 esp_timer/任务上下文与 LVGL 抢锁的家族老坑）。用一组 volatile 快照 +

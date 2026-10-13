@@ -149,4 +149,9 @@ void app_main(void)
     }
 
     ESP_LOGI(TAG, "就绪:显示=OK 按键=%s", input_err == ESP_OK ? "OK" : "FAIL");
+
+    // USJ 控制台在主机未打开串口时写入会忙等（FIFO 永远满），任何日志都可能
+    // 冻死调用任务——真机「按 OK 后死机」的根因。诊断走屏幕页脚（op_app），
+    // 运行期关闭全部日志；需要串口调试时用 JTAG 或临时移除这一行。
+    esp_log_level_set("*", ESP_LOG_NONE);
 }

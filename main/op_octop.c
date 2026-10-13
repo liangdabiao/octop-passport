@@ -370,9 +370,7 @@ static bool run_turn(void)
         idle_polls = 0;
         got_frame = true;
         tokens++;
-        if (tokens % 10 == 1) {
-            snprintf(s_o.diag, sizeof(s_o.diag), "tok=%d", tokens);
-        }
+        snprintf(s_o.diag, sizeof(s_o.diag), "tok=%d", tokens);
         if (esp_timer_get_time() - last_stat >= 5000000) {
             ESP_LOGI(TAG, "流式中 tokens=%d", tokens);
             last_stat = esp_timer_get_time();
