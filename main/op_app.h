@@ -7,7 +7,8 @@ typedef enum {
     OP_KEY_UP = 0,
     OP_KEY_DOWN,
     OP_KEY_OK,
-    OP_KEY_OK_LONG,   // 长按确定（P-M1 未用，保留）
+    OP_KEY_OK_PRESS,  // OK 按下瞬间（P-M2 语音：开始录音）
+    OP_KEY_OK_LONG,   // 长按确定（保留）
     OP_KEY_DOWN_LONG, // 长按下 = 打开配网门户
 } op_key_t;
 

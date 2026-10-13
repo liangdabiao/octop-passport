@@ -12,6 +12,7 @@
 
 typedef struct {
     int    status;                    // HTTP 状态码；0 = 传输失败
+    int    err;                       // status=0 时的底层 errno/原因码
     char  *body;                      // 响应体（HTTP/1.0 + Connection: close，
                                       // 头体按 \r\n\r\n 切分），调用方 free()
     size_t body_len;
@@ -28,3 +29,24 @@ void op_net_request(const char *host, int port, const char *method, const char *
 // scheme 只认 http（https 返回 false——固件不做 TLS）。成功返回 true。
 bool op_net_split_url(const char *url, char *host, size_t host_cap, int *port,
                       char *path, size_t path_cap);
+
+// ---- 流式 POST（语音边录边传）：HTTP/1.1 + chunked，Connection: close ----
+typedef struct {
+    int    sock;                  // -1 = 未打开
+    char   host[96];
+    int    port;
+    char   resp_status[16];       // read_response 后有效
+} op_net_stream_t;
+
+// 打开 TCP 并发出 POST 请求头（chunked）。返回 false = 连接/发送失败。
+bool op_net_stream_post_begin(op_net_stream_t *st, const char *host, int port,
+                              const char *path, const char *extra_headers);
+
+// 写一段 chunked 负载。返回 false = 发送失败。
+bool op_net_stream_write(op_net_stream_t *st, const void *data, size_t len);
+
+// 结束负载（终止 chunk）并读完整响应（Connection: close 到 EOF）。
+// resp->body 由调用方 free；失败时 status=0。
+void op_net_stream_finish(op_net_stream_t *st, op_net_response_t *resp);
+
+void op_net_stream_abort(op_net_stream_t *st);

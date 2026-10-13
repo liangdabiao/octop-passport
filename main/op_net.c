@@ -71,6 +71,7 @@ void op_net_request(const char *host, int port, const char *method, const char *
                     op_net_response_t *resp)
 {
     memset(resp, 0, sizeof(*resp));
+    const char *dbg = getenv("OP_NET_DEBUG");  // 未用：保持结构稳定
 
     const int body_len = body ? (int)strlen(body) : 0;
     char req[1152];
@@ -90,13 +91,18 @@ void op_net_request(const char *host, int port, const char *method, const char *
                      body_len);
     if (n < 0 || (size_t)n >= sizeof(req)) {
         ESP_LOGW(TAG, "请求头溢出");
+        resp->err = -2;
         return;
     }
 
     const int sock = connect_host(host, port);
-    if (sock < 0) return;
+    if (sock < 0) {
+        resp->err = errno ? errno : -3;  // DNS/路由失败的真实 errno（118=不可达）
+        return;
+    }
     if (write(sock, req, (size_t)n) < 0 || (body_len && write(sock, body, (size_t)body_len) < 0)) {
         ESP_LOGW(TAG, "请求发送失败 (errno=%d)", errno);
+        resp->err = errno;
         close(sock);
         return;
     }
@@ -127,4 +133,114 @@ void op_net_request(const char *host, int port, const char *method, const char *
     memcpy(resp->body, body_start, resp->body_len);
     resp->body[resp->body_len] = '\0';
     free(raw);
+}
+
+// ------------------------------------------------ 流式 POST（语音上传） ----
+bool op_net_stream_post_begin(op_net_stream_t *st, const char *host,
+                                         int port, const char *path,
+                                         const char *extra_headers)
+{
+    memset(st, 0, sizeof(*st));
+    st->sock = -1;
+
+    char req[768];
+    const int n = snprintf(req, sizeof(req),
+                           "POST %s HTTP/1.1\r\n"
+                           "Host: %s:%d\r\n"
+                           "User-Agent: octop-passport/0.1\r\n"
+                           "Accept: */*\r\n"
+                           "Connection: close\r\n"
+                           "Transfer-Encoding: chunked\r\n"
+                           "%s"
+                           "\r\n",
+                           path, host, port, extra_headers ? extra_headers : "");
+    if (n < 0 || (size_t)n >= sizeof(req)) return false;
+
+    const int sock = connect_host(host, port);
+    if (sock < 0) return false;
+    if (send(sock, req, (size_t)n, 0) < 0) {
+        close(sock);
+        return false;
+    }
+    st->sock = sock;
+    return true;
+}
+
+static bool stream_send_all(int sock, const void *buf, size_t len)
+{
+    const char *p = (const char *)buf;
+    while (len > 0) {
+        const ssize_t w = send(sock, p, len, 0);
+        if (w <= 0) return false;
+        p += w;
+        len -= (size_t)w;
+    }
+    return true;
+}
+
+bool op_net_stream_write(op_net_stream_t *st, const void *data, size_t len)
+{
+    if (st->sock < 0 || len == 0) return st->sock >= 0;
+    char head[16];
+    const int n = snprintf(head, sizeof(head), "%zx\r\n", len);
+    if (n < 0 || !stream_send_all(st->sock, head, (size_t)n)) return false;
+    if (!stream_send_all(st->sock, data, len)) return false;
+    return stream_send_all(st->sock, "\r\n", 2);
+}
+
+void op_net_stream_finish(op_net_stream_t *st, op_net_response_t *resp)
+{
+    memset(resp, 0, sizeof(*resp));
+    if (st->sock < 0) return;
+    if (!stream_send_all(st->sock, "0\r\n\r\n", 5)) {
+        close(st->sock);
+        st->sock = -1;
+        return;
+    }
+    // 读到 EOF（Connection: close）。
+    char *raw = (char *)malloc(OP_NET_BODY_MAX);
+    if (!raw) {
+        close(st->sock);
+        st->sock = -1;
+        return;
+    }
+    size_t received = 0;
+    for (;;) {
+        if (received >= OP_NET_BODY_MAX - 1) break;
+        const ssize_t r = recv(st->sock, raw + received, OP_NET_BODY_MAX - 1 - received, 0);
+        if (r <= 0) break;
+        received += (size_t)r;
+    }
+    close(st->sock);
+    st->sock = -1;
+    raw[received] = '\0';
+
+    char *head_end = strstr(raw, "\r\n\r\n");
+    if (!head_end || received < 12) {
+        free(raw);
+        return;
+    }
+    *head_end = '\0';
+    resp->status = atoi(raw + 9);
+    if (resp->status < 100) {
+        free(raw);
+        return;
+    }
+    char *body = head_end + 4;
+    resp->body_len = received - (size_t)(body - raw);
+    resp->body = (char *)malloc(resp->body_len + 1);
+    if (!resp->body) {
+        resp->status = 0;
+        free(raw);
+        return;
+    }
+    memcpy(resp->body, body, resp->body_len);
+    resp->body[resp->body_len] = '\0';
+    free(raw);
+}
+
+void op_net_stream_abort(op_net_stream_t *st)
+{
+    if (st->sock >= 0) close(st->sock);
+    st->sock = -1;
 }

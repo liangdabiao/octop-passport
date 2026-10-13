@@ -10,6 +10,7 @@ idf_component_register(
          # 服务与网络（op_wifi.cc 是 esp-wifi-connect 组件的 C 封装）
          "op_store.c"
          "op_net.c"
+         "op_voice.c"
          "op_ws.c"
          "op_octop.c"
          "op_wifi.cc"

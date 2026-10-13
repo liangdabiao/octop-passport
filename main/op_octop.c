@@ -12,6 +12,7 @@
 
 #include "op_net.h"
 #include "op_store.h"
+#include "op_wifi.h"
 #include "op_wire.h"
 #include "op_ws.h"
 
@@ -104,6 +105,16 @@ bool op_octop_send_turn(const char *text)
     return true;
 }
 
+bool op_octop_submit_transcript(const char *text)
+{
+    // 语音转录排队：与按键同一条发送通路，链路就绪后自动发出。
+    snprintf(s_o.turn_text, sizeof(s_o.turn_text), "%s", text);
+    s_o.turn_req = true;
+    return true;
+}
+
+const char *op_octop_jwt(void) { return s_o.jwt; }
+
 void op_octop_cancel_turn(void) { s_o.cancel_req = true; }
 
 void op_octop_new_thread(void)
@@ -144,11 +155,13 @@ static bool ensure_login(void)
     op_wire_json_escape(s_o.cfg.pass, pass_esc, sizeof(pass_esc));
     snprintf(body, sizeof(body), "{\"username\":\"%s\",\"password\":\"%s\"}",
              user_esc, pass_esc);
-    op_net_response_t r;
+    op_net_response_t r = {0};
     if (!http_api("POST", "/auth/login", body, &r) || r.status != 200) {
         const int st = r.status;
         free(r.body);
-        set_state(OP_ST_ERROR, st == 401 || st == 400 ? "账号或密码不对" : "登录连不上");
+        char why[64];
+        snprintf(why, sizeof(why), "登录连不上 (st=%d err=%d)", st, r.err);
+        set_state(OP_ST_ERROR, st == 401 || st == 400 ? "账号或密码不对" : why);
         return false;
     }
     if (op_wire_json_string(r.body, "access_token", s_o.jwt, sizeof(s_o.jwt)) < 0) {
@@ -188,7 +201,7 @@ static bool http_api(const char *method, const char *path, const char *body,
 static bool pick_agent(void)
 {
     set_state(OP_ST_PICK_AGENT, NULL);
-    op_net_response_t r;
+    op_net_response_t r = {0};
     if (!http_api("GET", "/agents", NULL, &r)) {
         set_state(OP_ST_ERROR, "连不上服务器");
         return false;
@@ -231,7 +244,7 @@ static bool ensure_thread(void)
     set_state(OP_ST_NEW_THREAD, NULL);
     char path[96];
     snprintf(path, sizeof(path), "/agents/%s/threads", s_o.agent);
-    op_net_response_t r;
+    op_net_response_t r = {0};
     if (!http_api("POST", path, "{}", &r)) {
         set_state(OP_ST_ERROR, "连不上服务器");
         return false;
@@ -391,6 +404,13 @@ static void octo_task(void *arg)
         if (!op_store_has_config()) {
             set_state(OP_ST_WAIT_WIFI, "请长按下键打开配网");
             vTaskDelay(pdMS_TO_TICKS(3000));
+            continue;
+        }
+        // 等 Wi-Fi 就绪：开机竞态会让首次连接在 DHCP 之前发出（errno=118），
+        // 空跑一轮还把状态打成 ERROR 误导用户——先等网络，再谈服务器。
+        if (!op_wifi_is_connected()) {
+            set_state(OP_ST_WAIT_WIFI, "等待 Wi-Fi");
+            vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
         }
         // 账号/登录/Agent/线程，任何一步 401 都重登一次再试。

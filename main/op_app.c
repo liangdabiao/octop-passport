@@ -18,15 +18,11 @@
 #include "op_wire.h"
 #include "op_ui.h"
 #include "op_wifi.h"
+#include "op_voice.h"
 #include <string.h>
 #include "fap_screenshot.h"
 
 static const char *TAG = "op_app";
-
-// P-M1 测试句：验证「建线程 → user_turn → 流式回复 → 分页」全链路。
-static const char *TEST_PROMPT =
-    "请写一篇八百字左右的短文，介绍一个你熟悉的历史典故，"
-    "用简体中文，分四段，叙事为主。";
 
 // 网络任务上下文回调 → 需要碰 LVGL 的都丢到 LVGL 定时器里做（不直接拿锁，
 // 避免 esp_timer/任务上下文与 LVGL 抢锁的家族老坑）。用一组 volatile 快照 +
@@ -89,6 +85,12 @@ static void on_turn_done(bool ok, const char *detail, void *user)
 static void ui_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
+    // 语音动作优先上状态栏（录音中/识别中）。
+    const char *vs = op_voice_status_text();
+    if (vs[0]) {
+        op_ui_set_note(vs);
+        return;
+    }
     // 页脚收帧统计：文字变化才 set_text（lv_label_set_text 每次都会重排重绘，
     // 20ms 一次的无条件刷新在单核 C3 上是持续渲染风暴，会饿死低优先级任务
     // ——真机表现为按键完全无响应）。
@@ -124,6 +126,7 @@ void op_app_start(void)
     lv_timer_create(ui_timer_cb, 20, NULL);
     fap_screenshot_start();
 
+    op_voice_init();  // 语音任务（按住 OK 说话）；缺失会导致按键无任何反应。
     op_wifi_set_custom_save(on_portal_save);
     op_wifi_start(NULL, NULL);
 
@@ -155,13 +158,15 @@ void op_app_key(op_key_t key)
             op_ui_refresh_reader();
             bsp_lvgl_unlock();
             break;
+        case OP_KEY_OK_PRESS:
+            op_voice_press();  // 按住 OK 说话（P-M2 语音路径）
+            break;
         case OP_KEY_OK:
+            // 松开 OK：结束录音 → STT。快速点按（<0.4s）由 op_voice 内部丢弃；
+            // 若正在流式回复 → 取消本轮。
+            op_voice_release();
             if (op_octop_state() == OP_ST_STREAMING) {
                 op_octop_cancel_turn();
-            } else if (op_octop_state() == OP_ST_READY) {
-                if (!op_octop_send_turn(TEST_PROMPT)) {
-                    ESP_LOGW(TAG, "发送失败：状态 %d", op_octop_state());
-                }
             }
             break;
         case OP_KEY_DOWN_LONG:

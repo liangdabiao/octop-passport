@@ -21,3 +21,6 @@ void op_ui_refresh_reader(void);
 
 // 底部提示行（按键提示 / 页码 / 截断标记）。
 void op_ui_set_hint(const char *text);
+
+// 状态栏直接显示一行提示（录音中/识别中等）。
+void op_ui_set_note(const char *text);

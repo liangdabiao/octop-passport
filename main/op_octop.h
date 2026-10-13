@@ -46,6 +46,12 @@ void op_octop_start(const op_octop_callbacks_t *cb);
 // 返回 false = 当前状态不可发（READY 之外）。
 bool op_octop_send_turn(const char *text);
 
+// 语音路径：把 STT 转录文本排队为一轮发问（任何时候可调，链路就绪后发出）。
+bool op_octop_submit_transcript(const char *text);
+
+// 当前登录态 JWT（语音上传鉴权用）；未登录返回空串。
+const char *op_octop_jwt(void);
+
 // 流式中取消本轮（WS cancel 帧）；READY 态为无害空操作。
 void op_octop_cancel_turn(void);
 

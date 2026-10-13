@@ -109,6 +109,10 @@ void app_main(void)
 {
     ESP_LOGI(TAG, "Octop Passport 启动");
 
+    // 自发重启排查：把复位原因打出来（值含义见 esp_reset_reason() 头文件注释；
+    // 1=panic 2=int_wdt 3=task_wdt 5=brownout 6=sw 7=sw_cpu ...）。
+    ESP_LOGI(TAG, "复位原因: %d", esp_reset_reason());
+
     const esp_sleep_wakeup_cause_t wakeup = esp_sleep_get_wakeup_cause();
     if (wakeup != ESP_SLEEP_WAKEUP_UNDEFINED) {
         ESP_LOGI(TAG, "休眠唤醒原因: %d", wakeup);

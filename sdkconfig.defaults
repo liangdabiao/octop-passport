@@ -62,3 +62,9 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=12288
 # UTF-8 编码 + 缺字占位保持可见（GB2312 常用集之外的字形显示占位符，不静默吞掉）。
 CONFIG_LV_TXT_ENC_UTF8=y
 CONFIG_LV_USE_FONT_PLACEHOLDER=y
+
+# ADC 按键消抖：WiFi 发射时电源噪声会让单次采样漂进相邻键的电压区间
+# （真机幻影按键：选中框自己跳、页脚 UP 计数自己疯涨——astock/画刊同款教训）。
+# 8 次采样取均值 + 组件级 3 tick 消抖。
+CONFIG_ADC_BUTTON_SAMPLE_TIMES=4
+CONFIG_BUTTON_DEBOUNCE_TICKS=7

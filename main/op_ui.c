@@ -15,8 +15,11 @@
 LV_FONT_DECLARE(op_font_16);
 LV_FONT_DECLARE(op_font_24);
 
-#define ROWS        17
-#define WIDTH_UNITS 30  // 240px / 8px（半角单位）
+// 行列必须与 LVGL 实际渲染一致，否则每页末尾几行被裁到屏外（真机踩过：
+// 15 字行宽 240px > 标签 232px，LVGL 二次折行让行数翻倍）。标签宽 232px、
+// 字高约 22px：14 个全角（28 半角单位）× 12 行，正文区 y=26..298。
+#define ROWS        12
+#define WIDTH_UNITS 28
 
 static lv_obj_t *s_status_label;   // 阅读页顶部状态栏（含电量）
 static lv_obj_t *s_body_label;     // 阅读页正文
@@ -168,4 +171,14 @@ void op_ui_set_hint(const char *text)
 {
     lv_label_set_text(s_hint_label, text);
     if (s_home_tip) lv_label_set_text(s_home_tip, text);  // 首页底部同步显示（按键自检）
+}
+
+void op_ui_set_note(const char *text)
+{
+    // 两个屏的顶部条共用语义：在哪个屏就更新哪个屏的提示。
+    if (s_on_home && s_home_status) {
+        lv_label_set_text(s_home_status, text);
+        return;
+    }
+    if (s_status_label) lv_label_set_text(s_status_label, text);
 }
