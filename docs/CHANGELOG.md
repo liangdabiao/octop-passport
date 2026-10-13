@@ -12,6 +12,21 @@
 
 ## Unreleased
 
+## Unreleased
+
+- First public-ready release (Octop Passport): turns the FoloToy AI Passport
+  into a pocket voice terminal for self-hosted Octop — hold OK to speak, the
+  recording streams up for speech-to-text, the transcript is sent to your
+  bound Octop agent, and replies stream onto the screen with GB2312 hanzi plus
+  CJK symbol coverage and automatic paging. SoftAP portal provisions Wi-Fi,
+  the Octop server address/account, and custom STT endpoint fields in three
+  steps; one dedicated thread per device (45 s first-frame timeout switches to
+  a fresh thread to skip server-side backlogs), queued OK presses, automatic
+  resend after link death; runtime console logging is disabled to avoid the
+  USJ busy-wait freeze; the speech recognition provider follows the Octop
+  console at any time with no device action.
+
+
 - Added the supplied 80-byte CW2017 profile for the specified 520 mAh cell, including content/update-flag checks, verified writes, the required restart sequence, and bounded SOC-readiness polling.
 
 - Expanded the environment bootstrap document: added Espressif's Git service mirror (`git.espressif.com.cn`) as the preferred mainland-China route for ESP-IDF v5.5.3 and its submodules, documented submodule long-wait/timeout handling, in-place repair, and the pinned-commit shallow fetch for large submodules such as `esp32-wifi-lib`, warned about stale per-repository Jihulab `insteadOf` residue, and added the official offline release archive as a last-resort fallback (learned from `esp-mosaico/esp-mosaico-vibe`).

@@ -10,6 +10,11 @@
 
 ## Unreleased
 
+## Unreleased
+
+- 首个公众可用版本（Octop Passport）：把 FoloToy AI Passport 变成自托管 Octop 的随身语音终端——按住 OK 说话，录音流式上传语音识别，转录自动发给自己绑定的 Octop Agent，回复逐字流式上屏，GB2312 全集+符号字库分页阅读；SoftAP 门户三步配网（Wi-Fi + Octop 地址/账号，自定义 STT 端点字段同步开放）；每设备独立会话线程（45 秒无首帧自动换新线程绕开服务端积压）、OK 排队制、断链自动重发；运行期关闭控制台日志以规避 USJ 写忙等死机；语音识别厂商在 Octop 后台随时切换，设备自动跟随。
+
+
 - 加入厂家为优特利 520mAh 电芯生成的 80 字节 CW2017 profile，并实现内容与更新标志检查、写入后校验、规定的重启时序以及有上限的 SOC 就绪等待。
 
 - 扩充环境引导文档：新增乐鑫 Git 服务镜像（`git.espressif.com.cn`）作为中国大陆首选线路，覆盖 ESP-IDF v5.5.3 及其子模块；补充子模块长等待/超时处理、原地修复，以及 `esp32-wifi-lib` 等大仓的按钉死 commit 浅取；提示按仓库残留的 Jihulab `insteadOf` 旧配置；并把官方离线 release 压缩包加入兜底方案（经验来自 `esp-mosaico/esp-mosaico-vibe`）。
