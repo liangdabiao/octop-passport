@@ -29,16 +29,22 @@ static const char *TAG = "op_app";
 // 20ms 周期定时器统一上屏。
 static volatile bool s_dirty_status;
 static volatile bool s_dirty_reader;
+static volatile bool s_reset_reader;  // 新一轮开始，正文清空重来
 static char s_status_detail[96];
 static char s_last_hint[96];   // 页脚去重（与 ui_timer 配合）
+static char s_last_note[32];   // 状态栏语音提示去重
 static volatile unsigned s_key_events;  // 按键事件计数（页脚显示：按键链路自检）
 static char s_last_key[16] = "-";  // 最近一次按键名
 static char s_stream_tail[96];   // 流式期间的提示（收到字节数）
 
 static void on_state(op_octop_state_t st, const char *detail, void *user)
 {
-    (void)st; (void)user;
+    (void)user;
     snprintf((char *)s_status_detail, sizeof(s_status_detail), "%s", detail ? detail : "");
+    // 分页器只有 append、没有轮次边界：上一轮的长文会一直占着 16KB 缓冲，
+    // 写满后 truncated 永久置位，append 直接变空操作——真机表现为「几轮之后
+    // 再也不出字」。每轮开始先把正文清空。
+    if (st == OP_ST_STREAMING) s_reset_reader = true;
     s_dirty_status = true;
 }
 
@@ -85,11 +91,23 @@ static void on_turn_done(bool ok, const char *detail, void *user)
 static void ui_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
-    // 语音动作优先上状态栏（录音中/识别中）。
+    // 新一轮开始：清空正文重来。本回调跑在 LVGL 任务上（锁已持有），网络任务
+    // 的 append 被同一把锁挡在门外，所以清空不会和追加打架。
+    if (s_reset_reader) {
+        s_reset_reader = false;
+        op_pager_reset(op_ui_pager());
+        op_ui_refresh_reader();
+    }
+    // 语音状态上状态栏（录音中/识别中/上次失败原因）。文字变了才刷；且不再
+    // 提前 return ——旧写法一次识别失败就把整条刷新链永久挡住，屏上再也不出字。
     const char *vs = op_voice_status_text();
     if (vs[0]) {
-        op_ui_set_note(vs);
-        return;
+        if (strcmp(vs, s_last_note) != 0) {
+            snprintf(s_last_note, sizeof(s_last_note), "%s", vs);
+            op_ui_set_note(vs);
+        }
+    } else {
+        s_last_note[0] = '\0';
     }
     // 页脚收帧统计：文字变化才 set_text（lv_label_set_text 每次都会重排重绘，
     // 20ms 一次的无条件刷新在单核 C3 上是持续渲染风暴，会饿死低优先级任务
@@ -143,7 +161,7 @@ void op_app_key(op_key_t key)
 {
     // 按键指示：真机排障期把按键事件计数落到页脚（ui_timer 带出）。
     s_key_events++;
-    static const char *const NAMES[] = { "UP", "DOWN", "OK", "OK长", "DOWN长" };
+    static const char *const NAMES[] = { "UP", "DOWN", "OK", "OK按", "OK长", "DOWN长" };
     snprintf(s_last_key, sizeof(s_last_key), "%s", NAMES[(int)key]);
     switch (key) {
         case OP_KEY_UP:

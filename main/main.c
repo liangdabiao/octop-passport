@@ -3,10 +3,10 @@
 // 只做三件事：把 BSP 外设点起来、把按键事件搬进队列、把界面交给 op_app 管。
 // Wi-Fi/配网、Octop 客户端、分页阅读都在 op_* 模块里，这里刻意保持薄。
 //
-// 硬件只有三个键（上/下/确定，共用一个 ADC 分压引脚），P-M1 语义：
-//   上/下 短按   阅读页翻页
-//   确定  短按   READY=发测试句 / STREAMING=取消
-//   下    长按   打开配网门户
+// 硬件只有三个键（上/下/确定，共用一个 ADC 分压引脚），语义：
+//   上/下 短按     阅读页翻页
+//   确定 按住/松开 说话（按下起录，松开送识别）；若正在回复则同时取消本轮
+//   下    长按     打开配网门户
 //
 // 输入任务的栈给到 8KB：页面处理链很浅，默认 3584 偏紧（LVGL 调用 +
 // snprintf + 折行缓冲都在这条链上），翻一倍留足余量。
@@ -53,6 +53,13 @@ static void on_key(bsp_btn_t btn, bsp_btn_ev_t event, void *user)
 
 static bool translate(const input_event_t *input, op_key_t *out)
 {
+    // 按住说话要的是「按下/松开」这一对事件。CLICK 只在短按后出现，长按被
+    // LONG 吃掉后再也没有收尾事件——录音会一直顶到 30s 上限。所以 OK 的
+    // 起录用 PRESS、停录用 RELEASE。
+    if (input->btn == BSP_BTN_OK) {
+        if (input->event == BSP_BTN_PRESS)   { *out = OP_KEY_OK_PRESS; return true; }
+        if (input->event == BSP_BTN_RELEASE) { *out = OP_KEY_OK;       return true; }
+    }
     // P-M1：双击不做事；确定长按暂不映射（原型的返回键没有对位页面）。
     if (input->event == BSP_BTN_LONG) {
         switch (input->btn) {
@@ -66,7 +73,6 @@ static bool translate(const input_event_t *input, op_key_t *out)
     switch (input->btn) {
         case BSP_BTN_UP:   *out = OP_KEY_UP;   return true;
         case BSP_BTN_DOWN: *out = OP_KEY_DOWN; return true;
-        case BSP_BTN_OK:   *out = OP_KEY_OK;   return true;
         default:           return false;
     }
 }

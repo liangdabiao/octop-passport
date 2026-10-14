@@ -30,6 +30,7 @@ static const char *TAG = "op_voice";
 #define SAMPLE_BYTES     640            // 10ms @16k/16bit/mono
 #define CHUNK_FRAMES     20             // 20 帧 × 10ms = 200ms 一个 chunk
 #define REC_MAX_FRAMES   (30 * 100)     // 单次录音硬上限 30s（100 帧/秒）
+#define REC_MIN_FRAMES   40             // 短于 0.4s 视为误触（见 op_app 的页脚承诺）
 #define STT_BODY_MAX     (4 * 1024)
 
 typedef enum {
@@ -66,6 +67,10 @@ const char *op_voice_status_text(void)
 static void set_state(v_state_t st)
 {
     s_v.state = st;
+    // 运行期日志是关掉的，屏上的失败原因是用户唯一的反馈来源：回到空闲时
+    // 不能把它冲掉（旧写法紧跟着就把「麦克读取失败」刷成「空闲」，屏上只剩
+    // 一句笼统的「没反应」）。
+    if (st == V_IDLE && strstr(s_v.status, "失败")) return;
     snprintf(s_v.status, sizeof(s_v.status), "%s",
              st == V_REC ? "录音中" : st == V_WAIT_STT ? "识别中" : "空闲");
     ESP_LOGI(TAG, "%s", s_v.status);
@@ -209,6 +214,15 @@ static char *rec_and_transcribe(void)
         }
     }
 
+    // 误触护栏：不足 0.4s 的按抬直接丢。半秒不到的静音喂给 MiMo，它会幻觉出
+    // 「嗯。」，等于凭空向 Agent 发了一轮提问（P-M0 实测）。
+    if (s_v.frames < REC_MIN_FRAMES) {
+        ESP_LOGW(TAG, "录音过短（%u 帧），本轮丢弃", (unsigned)s_v.frames);
+        op_net_stream_abort(&s_v.st);
+        snprintf(s_v.status, sizeof(s_v.status), "说太短，识别失败");
+        return NULL;
+    }
+
     // 收尾：冲掉残余块 + language 字段 + 终止边界 → 读响应。
     if (s_v.chunk_len > 0 &&
         !op_net_stream_write(&s_v.st, s_v.chunk, s_v.chunk_len)) {
@@ -246,22 +260,42 @@ static char *rec_and_transcribe(void)
 }
 
 // ------------------------------------------------------ 任务 ----
+// UTF-8 码点数（只数非续字节）。
+static int codepoints(const char *s)
+{
+    int n = 0;
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        if ((*p & 0xC0) != 0x80) n++;
+    }
+    return n;
+}
+
 static void voice_task(void *arg)
 {
     (void)arg;
     for (;;) {
         if (s_v.press_req) {
             s_v.press_req = false;
-            s_v.release_req = false;
             s_v.chunk_len = 0;
             s_v.frames = 0;
 
             char *text = rec_and_transcribe();
+            // 松手标志在收尾后才清：本任务 50ms 才醒一轮，快速点按时 release
+            // 往往已经落在 press 之后——开头就清掉会把这一轮的松手吞了，录音
+            // 一路顶到 30s 上限。
+            s_v.release_req = false;
             set_state(V_IDLE);
-            if (text && text[0]) {
+            // 少于两个字一律当「没听清」：空转录、或 MiMo 幻觉出的一两个字
+            // （「嗯。」），放过去都是一次白跑的 Agent 轮次。
+            if (text && codepoints(text) >= 2) {
                 op_octop_submit_transcript(text);
             } else {
-                ESP_LOGW(TAG, "转录为空/失败，本轮丢弃");
+                // rec_and_transcribe 里已经写了具体判因（麦克坏、说太短）就保留，
+                // 否则笼统报「没听清」。
+                if (!strstr(s_v.status, "失败")) {
+                    snprintf(s_v.status, sizeof(s_v.status), "没听清，识别失败");
+                }
+                ESP_LOGW(TAG, "转录过短/为空，本轮丢弃：%.40s", text ? text : "(空)");
             }
             free(text);
         }
